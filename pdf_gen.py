@@ -1,6 +1,5 @@
 import os
 import inspect
-import base64
 import logging
 from io import BytesIO
 from datetime import datetime, timedelta
@@ -39,43 +38,34 @@ VPS_CONFIG = {
 def screenshot_to_pdf(screenshot_path: str, output_pdf_path: str) -> str:
     """
     Convert a PNG screenshot to a PDF with a white background.
-    The screenshot is scaled to fit A4 width while preserving aspect ratio.
-    Returns output_pdf_path.
+    Scales to fit A4 width while preserving aspect ratio.
     """
-    # Open screenshot and flatten onto white background (handles transparency)
-    img = PilImage.open(screenshot_path).convert("RGBA")
-    bg  = PilImage.new("RGBA", img.size, (255, 255, 255, 255))
-    bg.paste(img, mask=img.split()[3])          # paste using alpha channel as mask
+    img      = PilImage.open(screenshot_path).convert("RGBA")
+    bg       = PilImage.new("RGBA", img.size, (255, 255, 255, 255))
+    bg.paste(img, mask=img.split()[3])
     flat_img = bg.convert("RGB")
 
-    # A4 dimensions in points (ReportLab uses points: 1pt = 1/72 inch)
-    PAGE_W, PAGE_H = A4                         # 595.27 x 841.89 pt
+    PAGE_W, PAGE_H = A4
+    img_w, img_h   = flat_img.size
+    scale          = PAGE_W / img_w
+    draw_w         = PAGE_W
+    draw_h         = img_h * scale
 
-    # Scale image to fit A4 width, maintain aspect ratio
-    img_w, img_h = flat_img.size
-    scale        = PAGE_W / img_w
-    draw_w       = PAGE_W
-    draw_h       = img_h * scale
-
-    # If image is taller than A4, scale down to fit height too
     if draw_h > PAGE_H:
         scale  = PAGE_H / img_h
         draw_w = img_w * scale
         draw_h = PAGE_H
 
-    # Center horizontally and align to top
-    x_offset = (PAGE_W - draw_w) / 2
-    y_offset  = PAGE_H - draw_h   # top of page in ReportLab coords
+    x_offset   = (PAGE_W - draw_w) / 2
+    y_offset   = PAGE_H - draw_h
 
-    # Save flattened image to buffer
     img_buffer = BytesIO()
     flat_img.save(img_buffer, format="PNG")
     img_buffer.seek(0)
 
-    # Draw onto PDF canvas
     c = canvas.Canvas(output_pdf_path, pagesize=A4)
     c.setFillColorRGB(1, 1, 1)
-    c.rect(0, 0, PAGE_W, PAGE_H, fill=True, stroke=False)   # white background
+    c.rect(0, 0, PAGE_W, PAGE_H, fill=True, stroke=False)
     c.drawImage(
         ImageReader(img_buffer),
         x_offset, y_offset,
@@ -91,25 +81,21 @@ def screenshot_to_pdf(screenshot_path: str, output_pdf_path: str) -> str:
 
 
 def upload_file_to_vps(local_path: str, filename: str) -> str:
-    """
-    Upload any file to VPS via SFTP.
-    Returns the public URL of the uploaded file.
-    """
-    cfg = VPS_CONFIG
+    """Upload file to VPS via SFTP. Returns public URL."""
+    cfg       = VPS_CONFIG
     transport = paramiko.Transport((cfg["host"], cfg["port"]))
 
     try:
         if cfg.get("ssh_key_path"):
             key = paramiko.RSAKey.from_private_key_file(cfg["ssh_key_path"])
             transport.connect(username=cfg["username"], pkey=key)
-            logger.info(f"🔐 SFTP connected to {cfg['host']} via SSH key")
+            logger.info(f"🔐 SFTP connected via SSH key")
         else:
             transport.connect(username=cfg["username"], password=cfg["password"])
-            logger.info(f"🔐 SFTP connected to {cfg['host']} via password")
+            logger.info(f"🔐 SFTP connected via password")
 
         sftp = paramiko.SFTPClient.from_transport(transport)
 
-        # Ensure remote directory exists
         try:
             sftp.stat(cfg["remote_dir"])
         except FileNotFoundError:
@@ -128,7 +114,7 @@ def upload_file_to_vps(local_path: str, filename: str) -> str:
     return public_url
 
 
-# Maps field_overrides keys → the CSS selector on the web page
+# Maps field_overrides keys → CSS selectors on the web page
 FIELD_SELECTOR_MAP = {
     "distance":             "#lbl_distrance",
     "lessee_name":          "#lbl_name_of_license",
@@ -155,10 +141,7 @@ FIELD_SELECTOR_MAP = {
 
 
 def append_time(date_str: str, time_str: str | None = None) -> str:
-    """
-    Append HH:MM:SS AM/PM to a date string.
-    Skips if AM/PM already present (prevents double append).
-    """
+    """Append HH:MM:SS AM/PM to a date string. Skips if already present."""
     if "AM" in date_str.upper() or "PM" in date_str.upper():
         return date_str
     if time_str is None:
@@ -167,9 +150,7 @@ def append_time(date_str: str, time_str: str | None = None) -> str:
 
 
 def compute_valid_upto(generated_on_str: str, days: int) -> str:
-    """
-    Add `days` to the date in generated_on_str, preserving the time component.
-    """
+    """Add `days` to the date in generated_on_str, preserving time component."""
     date_part = generated_on_str.strip().split(" ")[0]
     time_part = " ".join(generated_on_str.strip().split(" ")[1:]) or None
 
@@ -182,11 +163,9 @@ def compute_valid_upto(generated_on_str: str, days: int) -> str:
         except ValueError:
             continue
     if base_date is None:
-        logger.warning(
-            f"  ⚠ Could not parse generated_on={generated_on_str!r}, "
-            "using today as base date."
-        )
+        logger.warning(f"  ⚠ Could not parse {generated_on_str!r}, using today.")
         base_date = datetime.today()
+
     result_date = (base_date + timedelta(days=days)).strftime("%d/%m/%Y")
     return append_time(result_date, time_part if time_part else None)
 
@@ -202,7 +181,6 @@ def draw_data(c, data):
         for i, line in enumerate(lines[:3]):
             c.drawString(x, y - i * line_spacing, line)
 
-    # Top section
     raw_emM11   = data.get("emM11", "")
     clean_emM11 = re.sub(r"[^\d]", "", raw_emM11)
     c.drawString(273, 764.7, clean_emM11)
@@ -212,7 +190,6 @@ def draw_data(c, data):
     c.drawString(260, 753, data.get("lessee_mobile", ""))
     draw_wrapped_text(430, 755, data.get("lease_details", ""))
 
-    # Middle section
     c.drawString(100, 724, data.get("tehsil", ""))
     c.drawString(260, 719, data.get("district", ""))
     c.drawString(405, 718, data.get("qty", ""))
@@ -236,10 +213,9 @@ def draw_data(c, data):
     c.drawString(350, 618, data.get("driver_dl", ""))
     c.drawString(520, 628, data.get("driver_name", ""))
 
-    # Serial number
     c.drawString(340, 655, data.get("serial_number", ""))
 
-    # ── QR code: encodes the hosted screenshot-PDF URL ────────────────────────
+    # ── QR code ───────────────────────────────────────────────────────────────
     qr_url = data.get("qr_url")
     if qr_url:
         try:
@@ -250,39 +226,28 @@ def draw_data(c, data):
             qr_image  = ImageReader(qr_buffer)
 
             qr_size        = 40
-            padding_top    = 5
-            padding_bottom = 5
-            padding_left   = 5
-            padding_right  = 5
-            bg_color       = (1, 1, 1)
-
             PAGE_WIDTH, PAGE_HEIGHT = A4
-            margin_right = 70
-            margin_top   = 30
+            margin_right   = 70
+            margin_top     = 30
+            padding        = 5
 
             x_qr = PAGE_WIDTH  - qr_size - margin_right
             y_qr = PAGE_HEIGHT - qr_size - margin_top
 
-            bg_x      = x_qr - padding_left
-            bg_y      = y_qr - padding_bottom
-            bg_width  = qr_size + padding_left + padding_right
-            bg_height = qr_size + padding_top  + padding_bottom
-
-            c.setFillColorRGB(*bg_color)
-            c.rect(bg_x, bg_y, bg_width, bg_height, fill=True, stroke=False)
-            c.drawImage(
-                qr_image, x_qr, y_qr,
-                width=qr_size, height=qr_size,
-                preserveAspectRatio=True, mask='auto'
-            )
+            c.setFillColorRGB(1, 1, 1)
+            c.rect(x_qr - padding, y_qr - padding,
+                   qr_size + padding * 2, qr_size + padding * 2,
+                   fill=True, stroke=False)
+            c.drawImage(qr_image, x_qr, y_qr,
+                        width=qr_size, height=qr_size,
+                        preserveAspectRatio=True, mask='auto')
             logger.info(f"  ✅ QR drawn → {qr_url}")
         except Exception as e:
             logger.warning(f"⚠️ QR drawing failed: {e}")
-    # ─────────────────────────────────────────────────────────────────────────
 
 
 def generate_pdf(data, template_path, output_path):
-    """Generate the merged PDF (template + overlay data + QR)."""
+    """Generate merged PDF (template + overlay data + QR)."""
     overlay_stream = BytesIO()
     c = canvas.Canvas(overlay_stream, pagesize=A4)
     draw_data(c, data)
@@ -302,22 +267,21 @@ def generate_pdf(data, template_path, output_path):
 
 
 async def apply_overrides_to_page(page, field_overrides: dict):
-    """Update DOM elements so the screenshot reflects overridden values."""
+    """Push overridden values into DOM so screenshot reflects them."""
     for key, value in field_overrides.items():
         selector = FIELD_SELECTOR_MAP.get(key)
         if not selector:
-            logger.warning(f"  ⚠️ No selector for key: {key!r}, skipping")
             continue
         try:
             element = page.locator(selector)
-            tag = await element.evaluate("el => el.tagName.toLowerCase()")
+            tag     = await element.evaluate("el => el.tagName.toLowerCase()")
             if tag in ("input", "textarea"):
                 await element.evaluate(f"el => el.value = {repr(value)}")
             else:
                 await element.evaluate(f"el => el.innerText = {repr(value)}")
-            logger.info(f"  ↳ DOM updated: {key} ({selector}) = {value!r}")
+            logger.info(f"  ↳ DOM: {key} = {value!r}")
         except Exception as e:
-            logger.warning(f"  ⚠️ DOM update failed for {key} ({selector}): {e}")
+            logger.warning(f"  ⚠️ DOM update failed {key}: {e}")
 
 
 async def pdf_gen(
@@ -327,13 +291,24 @@ async def pdf_gen(
     send_pdf_callback=None,
     field_overrides: dict | None = None,
 ):
+    """
+    Generate PDFs for each TP number.
+
+    field_overrides keys (all optional — pass only what you want to override):
+        destination          str   e.g. "Lucknow"
+        destination_district str   e.g. "Lucknow"
+        generated_on         str   e.g. "27/02/2026"  (time auto-appended)
+        distance             str   e.g. "45"
+        serial_number        str   e.g. "AAQGG704751"
+        __valid_upto_days__  int   e.g. 2  (computed as generated_on + N days)
+    """
     if not tp_num_list:
         logger.info("ℹ️ No TP numbers provided.")
         return []
 
     os.makedirs("pdf",        exist_ok=True)
     os.makedirs("screenshot", exist_ok=True)
-    os.makedirs("ss_pdf",     exist_ok=True)   # ← stores screenshot-PDFs before upload
+    os.makedirs("ss_pdf",     exist_ok=True)
     all_pdfs = []
 
     async with async_playwright() as p:
@@ -355,6 +330,7 @@ async def pdf_gen(
                 if tp_num not in lbl_etpNo:
                     raise ValueError(f"Mismatch: expected {tp_num}, got {lbl_etpNo}")
 
+                # ── Scrape all fields ────────────────────────────────────────
                 data = {
                     "distance":             await page.locator('#lbl_distrance').inner_text(),
                     "destination_state":    "Uttar Pradesh",
@@ -380,88 +356,85 @@ async def pdf_gen(
                     "driver_mobile":        await page.locator("#lbl_mobile_number_of_driver").inner_text(),
                     "vehicle_type":         "14 TYRE TRUCK",
                 }
+                # ─────────────────────────────────────────────────────────────
 
-                # ── Append current time to date fields ───────────────────────
-                _now_time = datetime.now().strftime("%I:%M:%S %p")
+                # ── Append time to date fields ───────────────────────────────
+                _now_time            = datetime.now().strftime("%I:%M:%S %p")
                 data["generated_on"] = append_time(data["generated_on"], _now_time)
                 data["valid_upto"]   = append_time(data["valid_upto"],   _now_time)
                 # ─────────────────────────────────────────────────────────────
 
-                # ── Apply overrides ──────────────────────────────────────────
+                # ── Apply field overrides ────────────────────────────────────
+                dom_updates = {}   # collects what needs to go back to DOM
+
                 if field_overrides:
-                    resolved_overrides = dict(field_overrides)
+                    resolved = dict(field_overrides)
 
-                    if "__valid_upto_days__" in resolved_overrides:
-                        days = resolved_overrides.pop("__valid_upto_days__")
-                        base_date_str = resolved_overrides.get("generated_on", data["generated_on"])
-                        computed_date = compute_valid_upto(base_date_str, days)
-                        resolved_overrides["valid_upto"]       = computed_date
-                        resolved_overrides["valid_upto_label"] = computed_date
-                        logger.info(f"  ↳ valid_upto: {base_date_str} + {days}d = {computed_date}")
+                    # Resolve days-based valid_upto
+                    if "__valid_upto_days__" in resolved:
+                        days          = resolved.pop("__valid_upto_days__")
+                        base_date_str = resolved.get("generated_on", data["generated_on"])
+                        computed      = compute_valid_upto(base_date_str, days)
+                        resolved["valid_upto"]       = computed
+                        resolved["valid_upto_label"] = computed
+                        logger.info(f"  ↳ valid_upto: {base_date_str} + {days}d = {computed}")
 
-                    if "generated_on" in resolved_overrides:
-                        resolved_overrides["generated_on"] = append_time(
-                            resolved_overrides["generated_on"], _now_time
+                    # Append time to user-supplied generated_on if plain date
+                    if "generated_on" in resolved:
+                        resolved["generated_on"] = append_time(
+                            resolved["generated_on"], _now_time
                         )
 
-                    for key, value in resolved_overrides.items():
-                        if key in data:
-                            data[key] = value
-                            logger.info(f"  ↳ Data override: {key} = {value!r}")
+                    # Apply to data dict
+                    for k, v in resolved.items():
+                        if k in data:
+                            data[k] = v
+                            logger.info(f"  ↳ Override: {k} = {v!r}")
 
-                    if "valid_upto" in resolved_overrides and "valid_upto_label" not in resolved_overrides:
-                        resolved_overrides["valid_upto_label"] = resolved_overrides["valid_upto"]
+                    # Mirror valid_upto → label if not explicitly set
+                    if "valid_upto" in resolved and "valid_upto_label" not in resolved:
+                        resolved["valid_upto_label"] = resolved["valid_upto"]
 
-                    if "generated_on" not in resolved_overrides:
-                        resolved_overrides["generated_on"] = data["generated_on"]
-                    if "serial_number" not in resolved_overrides:
-                        resolved_overrides["serial_number"] = data["serial_number"]
+                    dom_updates = resolved
 
-                    await apply_overrides_to_page(page, resolved_overrides)
+                # Always push these to DOM (time-appended dates + serial)
+                dom_updates.setdefault("generated_on",     data["generated_on"])
+                dom_updates.setdefault("valid_upto",       data["valid_upto"])
+                dom_updates.setdefault("valid_upto_label", data["valid_upto"])
+                dom_updates.setdefault("serial_number",    data["serial_number"])
 
-                else:
-                    await apply_overrides_to_page(page, {
-                        "generated_on":     data["generated_on"],
-                        "valid_upto":       data["valid_upto"],
-                        "valid_upto_label": data["valid_upto"],
-                        "serial_number":    data["serial_number"],
-                    })
+                await apply_overrides_to_page(page, dom_updates)
                 # ─────────────────────────────────────────────────────────────
 
-                # ── Take full-page screenshot ─────────────────────────────────
+                # ── Screenshot ───────────────────────────────────────────────
                 timestamp           = datetime.now().strftime("%Y%m%d_%H%M%S")
                 screenshot_filename = f"{tp_num}_{timestamp}.png"
                 screenshot_path     = f"screenshot/{screenshot_filename}"
                 await page.screenshot(path=screenshot_path, full_page=True)
-                logger.info(f"📸 Screenshot saved: {screenshot_path}")
+                logger.info(f"📸 Screenshot: {screenshot_path}")
                 # ─────────────────────────────────────────────────────────────
 
-                # ── Convert screenshot → PDF with white background ────────────
+                # ── Convert screenshot → white-background PDF ─────────────────
                 ss_pdf_filename = f"{tp_num}_{timestamp}_ss.pdf"
                 ss_pdf_path     = f"ss_pdf/{ss_pdf_filename}"
                 screenshot_to_pdf(screenshot_path, ss_pdf_path)
                 # ─────────────────────────────────────────────────────────────
 
-                # ── Upload screenshot-PDF to VPS → public URL for QR ─────────
+                # ── Upload to VPS ─────────────────────────────────────────────
                 try:
                     qr_url = upload_file_to_vps(ss_pdf_path, ss_pdf_filename)
-                    logger.info(f"  ✅ SS-PDF hosted at: {qr_url}")
+                    logger.info(f"  ✅ Hosted: {qr_url}")
                 except Exception as upload_err:
-                    logger.warning(
-                        f"  ⚠️ VPS upload failed: {upload_err}\n"
-                        f"     Falling back to TP form URL."
-                    )
+                    logger.warning(f"  ⚠️ Upload failed: {upload_err} — fallback to TP URL")
                     qr_url = url
                 # ─────────────────────────────────────────────────────────────
 
-                # ── Generate final PDF with QR encoding the hosted SS-PDF URL ─
-                data["qr_url"]  = qr_url
-                final_pdf_path  = f"pdf/{tp_num}.pdf"
+                # ── Generate final PDF with QR ────────────────────────────────
+                data["qr_url"] = qr_url
+                final_pdf_path = f"pdf/{tp_num}.pdf"
                 generate_pdf(data, template_path, final_pdf_path)
                 all_pdfs.append((tp_num, final_pdf_path))
-
-                logger.info(f"✅ Final PDF: {final_pdf_path}")
-                logger.info(f"   Scan QR → opens: {qr_url}")
+                logger.info(f"✅ PDF: {final_pdf_path}  |  QR → {qr_url}")
                 # ─────────────────────────────────────────────────────────────
 
                 if log_callback:
@@ -487,107 +460,17 @@ async def pdf_gen(
     return all_pdfs
 
 
-def ask_overrides_interactive() -> dict:
-    FIELDS = [
-        ("Destination",          "destination",          "e.g. Lucknow"),
-        ("Destination District", "destination_district", "e.g. Lucknow"),
-        ("Generated On",         "generated_on",         "e.g. 27/02/2026"),
-        ("Distance",             "distance",             "e.g. 45"),
-        ("Serial Number",        "serial_number",        "e.g. SN-001"),
-    ]
-
-    overrides = {}
-
-    print("\n" + "═" * 50)
-    print("  FIELD OVERRIDE SELECTION")
-    print("  Answer y/n, then enter new value if yes.")
-    print("═" * 50)
-
-    for label, key, example in FIELDS:
-        while True:
-            answer = input(f"\n  Update {label}? [y/N]: ").strip().lower()
-            if answer in ("", "n", "no"):
-                print(f"  ↳ Keeping scraped value for {label}")
-                break
-            elif answer in ("y", "yes"):
-                value = input(f"  ↳ New value for {label} ({example}): ").strip()
-                if value:
-                    overrides[key] = value
-                    print(f"  ✔ {label} → {value!r}")
-                else:
-                    print(f"  ⚠ Empty input — keeping scraped value")
-                break
-            else:
-                print("  Please enter y or n.")
-
-    # ── Valid Upto: days-based ────────────────────────────────────────────────
-    while True:
-        answer = input(f"\n  Update Valid Upto? [y/N]: ").strip().lower()
-        if answer in ("", "n", "no"):
-            print("  ↳ Keeping scraped value for Valid Upto")
-            break
-        elif answer in ("y", "yes"):
-            while True:
-                days_input = input(
-                    "  ↳ Number of validity days from Generated On (e.g. 2): "
-                ).strip()
-                if days_input.isdigit() and int(days_input) > 0:
-                    overrides["__valid_upto_days__"] = int(days_input)
-                    print(f"  ✔ Valid Upto = Generated On + {days_input} day(s)")
-                    break
-                else:
-                    print("  ⚠ Please enter a positive whole number.")
-            break
-        else:
-            print("  Please enter y or n.")
-    # ─────────────────────────────────────────────────────────────────────────
-
-    print("\n" + "═" * 50)
-    display = {k: v for k, v in overrides.items() if k != "__valid_upto_days__"}
-    if "__valid_upto_days__" in overrides:
-        display["valid_upto"] = f"Generated On + {overrides['__valid_upto_days__']} day(s)"
-    if display:
-        print(f"  {len(display)} override(s) will be applied:")
-        for k, v in display.items():
-            print(f"    • {k} = {v!r}")
-    else:
-        print("  No overrides — all scraped values will be used as-is.")
-    print("═" * 50 + "\n")
-
-    return overrides
-
-
-async def main():
-    TEST_TP_NUMBERS = [
-        "3111230699026810767",   # ← replace with real TP numbers
-    ]
-    TEMPLATE_PATH = "form_template.pdf"
-
-    FIELD_OVERRIDES = ask_overrides_interactive()
-
-    def log(msg):
-        print(f"[LOG] {msg}")
-
-    logger.info("🚀 Starting run...")
-    logger.info(f"   TP numbers : {TEST_TP_NUMBERS}")
-    logger.info(f"   Template   : {TEMPLATE_PATH}")
-    logger.info(f"   Overrides  : {FIELD_OVERRIDES}")
-
-    results = await pdf_gen(
-        tp_num_list=TEST_TP_NUMBERS,
-        template_path=TEMPLATE_PATH,
-        log_callback=log,
-        field_overrides=FIELD_OVERRIDES,
-    )
-
-    if results:
-        logger.info(f"\n✅ Done! {len(results)} PDF(s) generated:")
-        for tp_num, path in results:
-            logger.info(f"   TP {tp_num} → {path}")
-    else:
-        logger.warning("⚠️ No PDFs were generated. Check TP numbers and template path.")
-
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+# ── main() kept for local testing only — NOT called in production ─────────────
+# async def main():
+#     TEST_TP_NUMBERS = ["3111230699026810767"]
+#     TEMPLATE_PATH   = "form_template.pdf"
+#     results = await pdf_gen(
+#         tp_num_list=TEST_TP_NUMBERS,
+#         template_path=TEMPLATE_PATH,
+#     )
+#     for tp_num, path in results:
+#         print(f"✅ {tp_num} → {path}")
+#
+# if __name__ == "__main__":
+#     import asyncio
+#     asyncio.run(main())
