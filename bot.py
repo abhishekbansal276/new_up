@@ -16,7 +16,7 @@ from telegram.ext import (
 from fetch_emm11_data import fetch_emm11_data
 from pdf_gen import pdf_gen
 
-BOT_TOKEN = '8414234561:AAHkVLYrVcl1q_TBwrwwai4jD6JlQ6w-aDw'
+BOT_TOKEN = '8108554913:AAEdgH861BPhYyx67TvtexFlEdACNlvteno'
 
 # ── Conversation states ───────────────────────────────────────────────────────
 ASK_START, ASK_END, ASK_DISTRICT = range(3)
