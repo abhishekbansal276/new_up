@@ -21,20 +21,20 @@ BOT_TOKEN = '8108554913:AAEdgH861BPhYyx67TvtexFlEdACNlvteno'
 # ── Conversation states ───────────────────────────────────────────────────────
 ASK_START, ASK_END, ASK_DISTRICT = range(3)
 
-# Custom-fields conversation states — one state per field
 (
     CF_DESTINATION,
     CF_DEST_DISTRICT,
-    CF_GENERATED_ON,
+    CF_GEN_DATE_START,
+    CF_GEN_DATE_END,
     CF_DISTANCE,
     CF_SERIAL,
     CF_VALID_UPTO_DAYS,
-) = range(3, 9)
+) = range(3, 10)
 # ─────────────────────────────────────────────────────────────────────────────
 
 user_sessions = {}
 
-SKIP_WORD = "skip"   # user types this to leave a field unchanged
+SKIP_WORD = "skip"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ def increment_serial(serial: str) -> str:
 
 
 def random_date_between(start_str: str, end_str: str) -> str:
-    """Return a random DD/MM/YYYY HH:MM between two dates."""
+    """Return a random DD/MM/YYYY HH:MM:SS AM/PM between two dates."""
     fmt = "%d/%m/%Y"
     try:
         start_dt = datetime.strptime(start_str.strip(), fmt)
@@ -64,8 +64,12 @@ def random_date_between(start_str: str, end_str: str) -> str:
         start_dt, end_dt = end_dt, start_dt
     delta      = (end_dt - start_dt).days
     random_day = start_dt + timedelta(days=random.randint(0, delta))
-    random_t   = timedelta(hours=random.randint(0, 23), minutes=random.randint(0, 59))
-    return (random_day + random_t).strftime("%d/%m/%Y %H:%M")
+    random_t   = timedelta(
+        hours=random.randint(0, 23),
+        minutes=random.randint(0, 59),
+        seconds=random.randint(0, 59),
+    )
+    return (random_day + random_t).strftime("%d/%m/%Y %I:%M:%S %p")
 
 
 def _skip_keyboard():
@@ -108,7 +112,9 @@ async def ask_district(update: Update, context: ContextTypes.DEFAULT_TYPE):
     end      = context.user_data['end']
     user_id  = update.effective_user.id
 
-    await update.message.reply_text(f"🔍 Fetching data for district: *{district}*...", parse_mode="Markdown")
+    await update.message.reply_text(
+        f"🔍 Fetching data for district: *{district}*...", parse_mode="Markdown"
+    )
 
     user_sessions[user_id] = {"data": []}
 
@@ -141,7 +147,10 @@ async def ask_district(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
     else:
-        await update.message.reply_text("⚠️ No data found for that range/district.")
+        await update.message.reply_text(
+            f"⚠️ No data found for district *{district}* in range {start}–{end}.",
+            parse_mode="Markdown"
+        )
 
     return ConversationHandler.END
 
@@ -153,11 +162,11 @@ async def custom_gen_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     context.user_data['cf'] = {}
-
     context.user_data['_cf_state'] = CF_DESTINATION
+
     await query.edit_message_text(
         "✏️ *Custom PDF Generation*\n\n"
-        "*Step 1/6 — Destination*\n"
+        "*Step 1/7 — Destination*\n"
         "Enter the destination address, or tap Skip to keep the scraped value.",
         reply_markup=_skip_keyboard(),
         parse_mode="Markdown"
@@ -165,20 +174,20 @@ async def custom_gen_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return CF_DESTINATION
 
 
-# ── Core helper: send next prompt correctly whether from message or callback ──
+# ── Core helper: advance to next wizard step ──────────────────────────────────
 
 async def _advance_cf(update, context, skipped: bool, current_state: int):
     """Move to next field in the custom-fields wizard."""
     NEXT = {
-        CF_DESTINATION:     (CF_DEST_DISTRICT,   "*Step 2/6 — Destination District*\nEnter the destination district, or Skip."),
-        CF_DEST_DISTRICT:   (CF_GENERATED_ON,    "*Step 3/6 — Generated On*\nEnter the date (DD/MM/YYYY), or Skip.\nTime will be auto-appended."),
-        CF_GENERATED_ON:    (CF_DISTANCE,        "*Step 4/6 — Distance*\nEnter distance in km (e.g. `45`), or Skip."),
-        CF_DISTANCE:        (CF_SERIAL,          "*Step 5/6 — Serial Number*\nEnter starting serial (e.g. `AAQGG704751`).\nEach PDF gets the next incremented number.\nOr Skip to keep scraped serials."),
-        CF_SERIAL:          (CF_VALID_UPTO_DAYS, "*Step 6/6 — Valid Upto*\nEnter number of validity days from Generated On (e.g. `2`), or Skip."),
-        CF_VALID_UPTO_DAYS: (None, None),
+        CF_DESTINATION:    (CF_DEST_DISTRICT,  "*Step 2/7 — Destination District*\nEnter the destination district, or Skip."),
+        CF_DEST_DISTRICT:  (CF_GEN_DATE_START, "*Step 3/7 — Generated On (Start Date)*\nEnter the *earliest* possible date `DD/MM/YYYY`, or Skip to keep scraped dates."),
+        CF_GEN_DATE_START: (CF_GEN_DATE_END,   "*Step 4/7 — Generated On (End Date)*\nEnter the *latest* possible date `DD/MM/YYYY`, or Skip.\nEach PDF will get a unique random date in this range."),
+        CF_GEN_DATE_END:   (CF_DISTANCE,       "*Step 5/7 — Distance*\nEnter distance in km (e.g. `45`), or Skip."),
+        CF_DISTANCE:       (CF_SERIAL,         "*Step 6/7 — Serial Number*\nEnter starting serial (e.g. `AAQGG704751`).\nEach PDF gets the next incremented number.\nOr Skip to keep scraped serials."),
+        CF_SERIAL:         (CF_VALID_UPTO_DAYS,"*Step 7/7 — Valid Upto*\nEnter number of validity days from Generated On (e.g. `2`), or Skip."),
+        CF_VALID_UPTO_DAYS:(None, None),
     }
     next_state, next_prompt = NEXT[current_state]
-
     is_callback = update.callback_query is not None
 
     async def send_next(text, reply_markup=None):
@@ -204,7 +213,6 @@ async def _advance_cf(update, context, skipped: bool, current_state: int):
 # ── Individual field handlers ─────────────────────────────────────────────────
 
 async def cf_destination(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['_cf_state'] = CF_DESTINATION
     val = update.message.text.strip()
     if val.lower() != SKIP_WORD:
         context.user_data['cf']['destination'] = val
@@ -212,31 +220,56 @@ async def cf_destination(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cf_dest_district(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['_cf_state'] = CF_DEST_DISTRICT
     val = update.message.text.strip()
     if val.lower() != SKIP_WORD:
         context.user_data['cf']['destination_district'] = val
     return await _advance_cf(update, context, skipped=False, current_state=CF_DEST_DISTRICT)
 
 
-async def cf_generated_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['_cf_state'] = CF_GENERATED_ON
+async def cf_gen_date_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     val = update.message.text.strip()
     if val.lower() != SKIP_WORD:
         try:
             datetime.strptime(val, "%d/%m/%Y")
-            context.user_data['cf']['generated_on'] = val
+            context.user_data['cf']['__gen_date_start__'] = val
         except ValueError:
             await update.message.reply_text(
-                "❌ Invalid format. Use DD/MM/YYYY or tap Skip:",
-                reply_markup=_skip_keyboard()
+                "❌ Invalid format. Use `DD/MM/YYYY` or tap Skip:",
+                reply_markup=_skip_keyboard(),
+                parse_mode="Markdown"
             )
-            return CF_GENERATED_ON
-    return await _advance_cf(update, context, skipped=False, current_state=CF_GENERATED_ON)
+            return CF_GEN_DATE_START
+    return await _advance_cf(update, context, skipped=False, current_state=CF_GEN_DATE_START)
+
+
+async def cf_gen_date_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    val = update.message.text.strip()
+    if val.lower() != SKIP_WORD:
+        try:
+            datetime.strptime(val, "%d/%m/%Y")
+            # Validate end >= start if start was provided
+            start_str = context.user_data['cf'].get('__gen_date_start__')
+            if start_str:
+                start_dt = datetime.strptime(start_str, "%d/%m/%Y")
+                end_dt   = datetime.strptime(val, "%d/%m/%Y")
+                if end_dt < start_dt:
+                    await update.message.reply_text(
+                        f"❌ End date must be on or after start date ({start_str}). Try again:",
+                        reply_markup=_skip_keyboard()
+                    )
+                    return CF_GEN_DATE_END
+            context.user_data['cf']['__gen_date_end__'] = val
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Invalid format. Use `DD/MM/YYYY` or tap Skip:",
+                reply_markup=_skip_keyboard(),
+                parse_mode="Markdown"
+            )
+            return CF_GEN_DATE_END
+    return await _advance_cf(update, context, skipped=False, current_state=CF_GEN_DATE_END)
 
 
 async def cf_distance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['_cf_state'] = CF_DISTANCE
     val = update.message.text.strip()
     if val.lower() != SKIP_WORD:
         context.user_data['cf']['distance'] = val
@@ -244,7 +277,6 @@ async def cf_distance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cf_serial(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['_cf_state'] = CF_SERIAL
     val = update.message.text.strip()
     if val.lower() != SKIP_WORD:
         context.user_data['cf']['__serial_start__'] = val
@@ -252,7 +284,6 @@ async def cf_serial(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cf_valid_upto_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['_cf_state'] = CF_VALID_UPTO_DAYS
     val = update.message.text.strip()
     if val.lower() != SKIP_WORD:
         if val.isdigit() and int(val) > 0:
@@ -266,12 +297,10 @@ async def cf_valid_upto_days(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return await _advance_cf(update, context, skipped=False, current_state=CF_VALID_UPTO_DAYS)
 
 
-# ── Skip button handler (per-state) ──────────────────────────────────────────
+# ── Skip button handler ───────────────────────────────────────────────────────
 
 async def _cf_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, state: int):
-    """Inline skip button handler bound to each state."""
     await update.callback_query.answer("Skipped ✓")
-    context.user_data['_cf_state'] = state
     return await _advance_cf(update, context, skipped=True, current_state=state)
 
 
@@ -281,8 +310,6 @@ async def _run_custom_generation(update: Update, context: ContextTypes.DEFAULT_T
     cf      = context.user_data.get('cf', {})
     tp_list = context.user_data.get('tp_num_list', [])
 
-    # Determine reply function — at this point update is always from a message
-    # (last step was a text input), but guard for callback just in case
     if update.callback_query:
         msg_fn = update.callback_query.message.reply_text
     else:
@@ -292,16 +319,22 @@ async def _run_custom_generation(update: Update, context: ContextTypes.DEFAULT_T
         await msg_fn("⚠️ No TP numbers in session. Please /start again.")
         return
 
-    serial_start = cf.pop('__serial_start__', None)
+    # Pop special keys before passing to pdf_gen
+    serial_start   = cf.pop('__serial_start__', None)
+    gen_date_start = cf.pop('__gen_date_start__', None)
+    gen_date_end   = cf.pop('__gen_date_end__', None)
 
+    # Build summary
     summary_lines = []
-    if cf.get('destination'):           summary_lines.append(f"• Destination: {cf['destination']}")
-    if cf.get('destination_district'):  summary_lines.append(f"• Dest District: {cf['destination_district']}")
-    if cf.get('generated_on'):          summary_lines.append(f"• Generated On: {cf['generated_on']}")
-    if cf.get('distance'):              summary_lines.append(f"• Distance: {cf['distance']}")
-    if serial_start:                    summary_lines.append(f"• Starting Serial: {serial_start}")
-    if cf.get('__valid_upto_days__'):   summary_lines.append(f"• Valid Upto: +{cf['__valid_upto_days__']} day(s)")
-    if not summary_lines:               summary_lines.append("• All scraped values (no overrides)")
+    if cf.get('destination'):          summary_lines.append(f"• Destination: {cf['destination']}")
+    if cf.get('destination_district'): summary_lines.append(f"• Dest District: {cf['destination_district']}")
+    if gen_date_start:
+        end_label = gen_date_end or gen_date_start
+        summary_lines.append(f"• Date Range: {gen_date_start} → {end_label} (random per PDF)")
+    if cf.get('distance'):             summary_lines.append(f"• Distance: {cf['distance']} km")
+    if serial_start:                   summary_lines.append(f"• Starting Serial: {serial_start}")
+    if cf.get('__valid_upto_days__'):  summary_lines.append(f"• Valid Upto: +{cf['__valid_upto_days__']} day(s)")
+    if not summary_lines:              summary_lines.append("• All scraped values (no overrides)")
 
     await msg_fn(
         f"⚙️ Generating *{len(tp_list)}* PDF(s):\n" + "\n".join(summary_lines) + "\n\nPlease wait...",
@@ -315,6 +348,12 @@ async def _run_custom_generation(update: Update, context: ContextTypes.DEFAULT_T
     for tp_num in tp_list:
         overrides = dict(cf)
 
+        # Pick a fresh random date for each PDF
+        if gen_date_start:
+            end_str = gen_date_end or gen_date_start
+            random_date = random_date_between(gen_date_start, end_str)
+            overrides['generated_on'] = random_date
+
         if current_serial:
             overrides['serial_number'] = current_serial
 
@@ -326,8 +365,11 @@ async def _run_custom_generation(update: Update, context: ContextTypes.DEFAULT_T
                 field_overrides=overrides if overrides else None,
             )
             generated.append(tp_num)
+
+            date_info   = f", date `{overrides['generated_on']}`" if gen_date_start else ""
             serial_info = f", serial `{current_serial}`" if current_serial else ""
-            await msg_fn(f"✅ `{tp_num}`{serial_info}", parse_mode="Markdown")
+            await msg_fn(f"✅ `{tp_num}`{date_info}{serial_info}", parse_mode="Markdown")
+
         except Exception as e:
             await msg_fn(f"❌ Failed `{tp_num}`: {e}", parse_mode="Markdown")
 
@@ -454,10 +496,17 @@ def main():
                     pattern="^cf_skip$"
                 ),
             ],
-            CF_GENERATED_ON: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, cf_generated_on),
+            CF_GEN_DATE_START: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cf_gen_date_start),
                 CallbackQueryHandler(
-                    lambda u, c: _cf_skip_handler(u, c, CF_GENERATED_ON),
+                    lambda u, c: _cf_skip_handler(u, c, CF_GEN_DATE_START),
+                    pattern="^cf_skip$"
+                ),
+            ],
+            CF_GEN_DATE_END: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cf_gen_date_end),
+                CallbackQueryHandler(
+                    lambda u, c: _cf_skip_handler(u, c, CF_GEN_DATE_END),
                     pattern="^cf_skip$"
                 ),
             ],
