@@ -20,12 +20,15 @@ async def fetch_single_emm11(playwright, emm11_num, district, log=print):
         await page.screenshot(path=f"screenshots/{emm11_num}.png")
 
         await page.wait_for_selector("#lbl_district", timeout=10000)
-        district_text = await page.locator("#lbl_district").inner_text()
+        district_text = await page.locator("#lbl_destination_district").inner_text()
         quantity = await page.locator("#lbl_qty_to_Transport_Tonne").inner_text()
         address = await page.locator("#lbl_destination_address").inner_text()
         generated_on = await page.locator("#txt_eFormC_generated_on").inner_text()
 
-        if district.upper() in district_text.strip().upper():
+        if (
+            district.strip().upper() == district_text.strip().upper()
+            or district.strip().upper() in district_text.strip().upper()
+        ):
             return {
                 "eMM11_num": emm11_num,
                 "destination_district": district_text.strip(),
