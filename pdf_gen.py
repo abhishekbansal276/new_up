@@ -511,7 +511,7 @@ VPS_CONFIG = {
 }
 
 # ── Netlify Viewer Base URL ──────────────────────────────────────────────────
-NETLIFY_VIEWER_BASE_URL = "https://your-site.netlify.app"
+NETLIFY_VIEWER_BASE_URL = "https://qme-qr.netlify.app/"
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Watermark / header text to draw on screenshot ───────────────────────────
