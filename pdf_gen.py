@@ -511,7 +511,7 @@ VPS_CONFIG = {
 }
 
 # ── Netlify Viewer Base URL ──────────────────────────────────────────────────
-NETLIFY_VIEWER_BASE_URL = "https://your-site.netlify.app"
+NETLIFY_VIEWER_BASE_URL = "https://qme-qr.netlify.app/"
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Watermark / header text to draw on screenshot ───────────────────────────
@@ -556,7 +556,7 @@ def add_header_text(image_path: str, text: str) -> None:
     # ── Blue link colour + underline ──
     blue = (0, 0, 200)
     draw.text((x, y), text, font=font, fill=blue)
-    underline_y = y + t_h + 2
+    underline_y = y + t_h + 4
     draw.line([(x, underline_y), (x + t_w, underline_y)], fill=blue, width=2)
 
     img.save(image_path)
