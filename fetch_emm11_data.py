@@ -17,45 +17,12 @@ async def fetch_single_emm11(browser, emm11_num, district, log=print):
 
     try:
         log(f"🔍 [{emm11_num}] Fetching page...")
+        await page.goto(url, timeout=20000)
 
-        # ── FIX 1: Visit homepage first to establish a session/cookie ──────────
-        try:
-            await page.goto(
-                "https://upmines.upsdc.gov.in/",
-                wait_until="domcontentloaded",
-                timeout=30000,
-            )
-        except Exception:
-            pass  # Even if homepage fails, still try the target URL
+        # Wait for the key element to confirm page loaded
+        await page.wait_for_selector("#lbl_destination_district", timeout=10000)
 
-        # ── FIX 2: Increased timeout + domcontentloaded (don't wait for all resources) ──
-        await page.goto(
-            url,
-            wait_until="domcontentloaded",
-            timeout=60000,
-        )
-
-        # ── FIX 3: Wait for selector with a longer timeout ─────────────────────
-        try:
-            await page.wait_for_selector("#lbl_destination_district", timeout=30000)
-        except PlaywrightTimeoutError:
-            # ── FIX 4: Screenshot on timeout so you can see what loaded ──────
-            screenshot_path = f"screenshots/{emm11_num}_timeout.png"
-            await page.screenshot(path=screenshot_path)
-            log(
-                f"⏱ [{emm11_num}] Selector timeout. "
-                f"Screenshot saved → {screenshot_path}"
-            )
-            return None
-
-        # ── FIX 5: Check element exists before reading ─────────────────────────
-        district_el = page.locator("#lbl_destination_district")
-        if await district_el.count() == 0:
-            log(f"⏭ [{emm11_num}] Element #lbl_destination_district not found on page.")
-            await page.screenshot(path=f"screenshots/{emm11_num}_missing_el.png")
-            return None
-
-        # Take a success screenshot for debugging
+        # Take screenshot for debugging
         await page.screenshot(path=f"screenshots/{emm11_num}.png")
 
         # Read all required fields
@@ -78,28 +45,12 @@ async def fetch_single_emm11(browser, emm11_num, district, log=print):
                 "generated_on":          generated_on.strip(),
             }
         else:
-            log(
-                f"⏭ [{emm11_num}] Skipped — District on page is "
-                f"'{district_text.strip()}', expected '{district.strip()}'"
-            )
+            log(f"⏭ [{emm11_num}] Skipped — District on page is '{district_text.strip()}', expected '{district.strip()}'")
 
     except PlaywrightTimeoutError:
-        screenshot_path = f"screenshots/{emm11_num}_timeout.png"
-        try:
-            await page.screenshot(path=screenshot_path)
-        except Exception:
-            pass
-        log(
-            f"⏱ [{emm11_num}] Page load timeout. "
-            f"Screenshot saved → {screenshot_path}"
-        )
+        log(f"⏱ [{emm11_num}] Timeout — page took too long to load.")
     except Exception as e:
-        screenshot_path = f"screenshots/{emm11_num}_error.png"
-        try:
-            await page.screenshot(path=screenshot_path)
-        except Exception:
-            pass
-        log(f"❌ [{emm11_num}] Error: {e}. Screenshot saved → {screenshot_path}")
+        log(f"❌ [{emm11_num}] Error: {e}")
     finally:
         await page.close()
 
@@ -135,12 +86,13 @@ async def fetch_emm11_data(start_num, end_num, district, data_callback=None, log
         browser = await playwright.chromium.launch(headless=HEADLESS, slow_mo=50)
         semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
-        checked = 0
-        skipped = 0
-        lock    = asyncio.Lock()
+        checked   = 0
+        skipped   = 0
+        errors    = 0
+        lock      = asyncio.Lock()
 
         async def limited_fetch(num):
-            nonlocal checked, skipped
+            nonlocal checked, skipped, errors
             async with semaphore:
                 result = await fetch_single_emm11(browser, num, district, log=log)
 
@@ -173,22 +125,15 @@ async def fetch_emm11_data(start_num, end_num, district, data_callback=None, log
     log(f"   Range checked : {start_num} → {end_num}  ({total} IDs)")
     log(f"   District      : {district.strip().upper()}")
     log(f"   ✅ Matched     : {len(results)}")
-    log(f"   ⏭ Skipped     : {skipped}  (different district / no data / timeout)")
+    log(f"   ⏭ Skipped     : {skipped}  (different district / no data)")
     log(f"{'='*55}")
 
     if not results:
-        log(
-            f"\n⚠️  No records found for district '{district.strip().upper()}' "
-            f"in range {start_num}–{end_num}."
-        )
+        log(f"\n⚠️  No records found for district '{district.strip().upper()}' in range {start_num}–{end_num}.")
     else:
         log(f"\n🎯 {len(results)} record(s) found for '{district.strip().upper()}':")
         for item in results:
-            log(
-                f"   • eMM11 #{item['eMM11_num']} | "
-                f"Qty: {item['quantity_to_transport']} | "
-                f"Generated: {item['generated_on']}"
-            )
+            log(f"   • eMM11 #{item['eMM11_num']} | Qty: {item['quantity_to_transport']} | Generated: {item['generated_on']}")
 
     return results
 
@@ -199,8 +144,8 @@ async def fetch_emm11_data(start_num, end_num, district, data_callback=None, log
 #     matched = await fetch_emm11_data(
 #         start_num=1000,
 #         end_num=1050,
-#         district="RAMPUR",
+#         district="LUCKNOW",
 #     )
 
-# if __name__ == "__main__":
-#     asyncio.run(main())
+# # if __name__ == "__main__":
+# #     asyncio.run(main())
