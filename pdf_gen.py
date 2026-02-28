@@ -964,6 +964,6 @@ async def main():
     for tp_num, path in results:
         print(f"✅ {tp_num} → {path}")
 
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+# if __name__ == "__main__":
+#     import asyncio
+#     asyncio.run(main())
