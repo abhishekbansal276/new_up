@@ -511,7 +511,7 @@ VPS_CONFIG = {
 }
 
 # ── Netlify Viewer Base URL ──────────────────────────────────────────────────
-NETLIFY_VIEWER_BASE_URL = "https://qme-qr.netlify.app/"
+NETLIFY_VIEWER_BASE_URL = "https://your-site.netlify.app"
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Watermark / header text to draw on screenshot ───────────────────────────
@@ -691,7 +691,7 @@ def draw_data(c, data):
     c.drawString(435, 687.5, data.get("valid_upto", ""))
 
     c.drawString(265, 669, data.get("travel_duration", ""))
-    c.drawString(90,  667, data.get("destination_district", ""))
+    c.drawString(90,  669, data.get("destination_district", ""))
 
     c.drawString(110, 645, data.get("pit_value", ""))
 
@@ -954,16 +954,16 @@ async def pdf_gen(
 
 
 # ── main() kept for local testing only — NOT called in production ─────────────
-# async def main():
-#     TEST_TP_NUMBERS = ["3111230699026810767"]
-#     TEMPLATE_PATH   = "form_template.pdf"
-#     results = await pdf_gen(
-#         tp_num_list=TEST_TP_NUMBERS,
-#         template_path=TEMPLATE_PATH,
-#     )
-#     for tp_num, path in results:
-#         print(f"✅ {tp_num} → {path}")
+async def main():
+    TEST_TP_NUMBERS = ["3111230699026810767"]
+    TEMPLATE_PATH   = "form_template.pdf"
+    results = await pdf_gen(
+        tp_num_list=TEST_TP_NUMBERS,
+        template_path=TEMPLATE_PATH,
+    )
+    for tp_num, path in results:
+        print(f"✅ {tp_num} → {path}")
 
-# if __name__ == "__main__":
-#     import asyncio
-#     asyncio.run(main())
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
