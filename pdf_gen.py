@@ -701,7 +701,7 @@ def draw_data(c, data):
     c.drawString(350, 618, data.get("driver_dl", ""))
     c.drawString(520, 628, data.get("driver_name", ""))
 
-    c.drawString(320, 655, data.get("serial_number", ""))
+    c.drawString(325, 655, data.get("serial_number", ""))
 
     # ── QR code ───────────────────────────────────────────────────────────────
     qr_url = data.get("qr_url")
@@ -841,7 +841,7 @@ async def pdf_gen(
                     "registration_number":  await page.locator("#lbl_registraton_number_of_vehicle").inner_text(),
                     "driver_name":          await page.locator("#lbl_name_of_driver").inner_text(),
                     "driver_mobile":        await page.locator("#lbl_mobile_number_of_driver").inner_text(),
-                    "vehicle_type":         "14 TYRE TRUCK",
+                    "vehicle_type":         "18 TYRE TRUCK",
                 }
                 # ─────────────────────────────────────────────────────────────
 
