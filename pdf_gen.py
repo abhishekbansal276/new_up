@@ -667,7 +667,7 @@ def draw_data(c, data):
     raw_emM11   = data.get("emM11", "")
     clean_emM11 = re.sub(r"[^\d]", "", raw_emM11)
     c.drawString(273, 764.4, clean_emM11)
-    c.drawString(415, 763, data.get("lessee_id", ""))
+    c.drawString(385, 763, data.get("lessee_id", ""))
 
     draw_wrapped_text(102, 752, data.get("lessee_name", ""))
     c.drawString(270, 751, data.get("lessee_mobile", ""))
@@ -964,6 +964,6 @@ async def main():
     for tp_num, path in results:
         print(f"✅ {tp_num} → {path}")
 
-# if __name__ == "__main__":
-#     import asyncio
-#     asyncio.run(main())
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
